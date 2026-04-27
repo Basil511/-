@@ -434,56 +434,59 @@ function stScan(vid, st) {
     clCam();
     document.getElementById('bc').value = code;
     onBc(code);
-    tst('تم مسح الباركود \u2713', 'g');
+    tst('\u062a\u0645 \u0645\u0633\u062d \u0627\u0644\u0628\u0627\u0631\u0643\u0648\u062f \u2713', 'g');
     setTimeout(function(){ document.getElementById('nm').focus(); }, 300);
   }
 
   st.textContent = '\u0648\u062c\u0651\u0647 \u0627\u0644\u0643\u0627\u0645\u064a\u0631\u0627 \u0646\u062d\u0648 \u0627\u0644\u0628\u0627\u0631\u0643\u0648\u062f';
 
-  /* ── ZXing canvas scan (correct API) ── */
-  try {
-    var cv  = document.createElement('canvas');
-    var ctx = cv.getContext('2d', { willReadFrequently: true });
+  /* ── Method 1: ZXingBrowser.decodeFromCanvas (best quality) ── */
+  if (typeof ZXingBrowser !== 'undefined' && ZXingBrowser.BrowserMultiFormatReader) {
+    try {
+      var reader = new ZXingBrowser.BrowserMultiFormatReader();
+      var cv     = document.createElement('canvas');
+      var ctx    = cv.getContext('2d', { willReadFrequently: true });
 
-    /* Use ZXingBrowser.BrowserMultiFormatReader + ZXingBrowser.HTMLCanvasElementLuminanceSource */
-    var reader = new ZXingBrowser.BrowserMultiFormatReader();
-
-    scanTm = setInterval(function() {
-      if (!camOn || vid.readyState < 2) return;
-      try {
+      scanTm = setInterval(function() {
+        if (!camOn || vid.readyState < 2) return;
         cv.width  = vid.videoWidth  || 640;
         cv.height = vid.videoHeight || 480;
         ctx.drawImage(vid, 0, 0);
-
-        /* Use HTMLCanvasElementLuminanceSource directly from bundled lib */
-        var lum = new ZXingBrowser.HTMLCanvasElementLuminanceSource(cv);
-        var bmp = new ZXingBrowser.BinaryBitmap(new ZXingBrowser.HybridBinarizer(lum));
-        var res = reader.decodeBitmap(bmp);
-        if (res) onF(res.getText());
-      } catch(ignore) { /* no barcode in frame — normal */ }
-    }, 200);
-    return;
-  } catch(e1) {
-    console.warn('ZXing canvas failed:', e1);
-  }
-
-  /* ── Native BarcodeDetector fallback (Chrome Android) ── */
-  if ('BarcodeDetector' in window) {
-    try {
-      var det = new BarcodeDetector({
-        formats: ['ean_13','ean_8','code_128','code_39','qr_code','upc_a','upc_e','data_matrix','itf']
-      });
-      scanTm = setInterval(async function() {
-        if (!camOn || vid.readyState < 2) return;
-        try { var r = await det.detect(vid); if (r && r.length) onF(r[0].rawValue); } catch(e) {}
-      }, 300);
+        try {
+          /* decodeFromCanvas is the correct synchronous API */
+          var res = reader.decodeFromCanvas(cv);
+          if (res && res.getText()) onF(res.getText());
+        } catch(ignore) { /* no barcode visible — normal */ }
+      }, 200);
       return;
-    } catch(e2) {
-      console.warn('BarcodeDetector failed:', e2);
+    } catch(e1) {
+      console.warn('ZXing decodeFromCanvas failed:', e1);
+      clearInterval(scanTm);
     }
   }
 
-  /* ── Manual input fallback ── */
+  /* ── Method 2: Native BarcodeDetector (Chrome Android / Safari 17+) ── */
+  if ('BarcodeDetector' in window) {
+    try {
+      var det = new BarcodeDetector({
+        formats: ['ean_13','ean_8','code_128','code_39','code_93',
+                  'qr_code','upc_a','upc_e','data_matrix','itf','pdf417']
+      });
+      scanTm = setInterval(async function() {
+        if (!camOn || vid.readyState < 2) return;
+        try {
+          var r = await det.detect(vid);
+          if (r && r.length) onF(r[0].rawValue);
+        } catch(e) {}
+      }, 250);
+      return;
+    } catch(e2) {
+      console.warn('BarcodeDetector failed:', e2);
+      clearInterval(scanTm);
+    }
+  }
+
+  /* ── Method 3: Manual input on camera screen ── */
   st.className   = 'cam-st er';
   st.textContent = '\u0627\u0643\u062a\u0628 \u0627\u0644\u0628\u0627\u0631\u0643\u0648\u062f \u0623\u062f\u0646\u0627\u0647 \u062b\u0645 \u0627\u0636\u063a\u0637 Enter';
   var inp = document.createElement('input');
@@ -503,7 +506,8 @@ function stScan(vid, st) {
   inp.onkeydown = function(e) {
     if (e.key === 'Enter' && inp.value.trim()) onF(inp.value.trim());
   };
-  document.querySelector('.cam-body').appendChild(inp);
+  var camBody = document.querySelector('.cam-body');
+  if (camBody) camBody.appendChild(inp);
   setTimeout(function(){ inp.focus(); }, 300);
 }
 
